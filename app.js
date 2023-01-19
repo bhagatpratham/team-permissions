@@ -33,42 +33,38 @@ app.get("/profile", requiresAuth(), (req, res) => {
   res.send(JSON.stringify(req.oidc.user));
 });
 
-const checkPermissions = (authorized) => {
+const checkPermissions = (id, permission_type) => {
   return (req, res, next) => {
-    req.permissions = authorized;
-    if (authorized == true) {
-      res.send("Access granted");
-      // getting user id from auth0 client
-      const id = auth0Client.getProfile(req.query.access_token, (err, user) => {
-        if (err) return res.send(err);
-        console.log(user.user_id);
-        res.send(user.user_id);
-      });
-      const body = { id };
+    const body = { id, permission_type };
 
-      fetch("http://localhost:3476/v1/permissions/check", {
-        method: "POST",
-        body: JSON.stringify(body),
-        headers: { "Content-Type": "application/json" },
+    fetch("http://localhost:3476/v1/permissions/check", {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json" },
+    })
+      .then((response) => {
+        response.json();
+        console.log(response);
       })
-        .then((response) => response.json())
-        .then((data) => {
-          req.permissions = data;
-          next();
-        })
-        .catch((err) => {
-          res.status(500).send(err);
-        });
-    } else {
-      res.status(401).send("Access denied");
-    }
+      .then((data) => {
+        req.permissions = data;
+        if (data.authorized == true) {
+          res.send("Access granted");
+        } else {
+          res.status(401).send("Access denied");
+        }
+        next();
+      })
+      .catch((err) => {
+        res.status(500).send(err);
+      });
   };
 };
 app.use(checkPermissions);
 
 // GET /teams?id/resources API route to list resources of specific team
 
-app.get("/teams/:id/resources", checkPermissions(true), (req, res) => {
+app.get("/teams/:id/resources", checkPermissions(14, "list"), (req, res) => {
   // create a middleware for that get receiver
   // that sends a REST API request to:
   // "localhost:3476/v1/permissions/check" endpoint
@@ -101,7 +97,7 @@ app.get("/teams/:id/resources", checkPermissions(true), (req, res) => {
 
 // GET /teams?id/resources?id API route to view resource
 
-app.get("/resources/:id", checkPermissions(true), (req, res) => {
+app.get("/resources/:id", checkPermissions(14, "view"), (req, res) => {
   // create a middleware for that get receiver
   // that sends a REST API request to:
   // "localhost:3476/v1/permissions/check" endpoint
@@ -134,7 +130,7 @@ app.get("/resources/:id", checkPermissions(true), (req, res) => {
 });
 
 // PUT /resources?id API route to edit resource
-app.put("/resources/:id", checkPermissions(true), (req, res) => {
+app.put("/resources/:id", checkPermissions(14, "edit"), (req, res) => {
   // create a middleware for that get receiver
   // that sends a REST API request to:
   // "localhost:3476/v1/permissions/check" endpoint
@@ -168,7 +164,7 @@ app.put("/resources/:id", checkPermissions(true), (req, res) => {
 
 // DELETE /resources?id API route to delete the resource
 
-app.delete("/resources/:id", checkPermissions(true), (req, res) => {
+app.delete("/resources/:id", checkPermissions(14, "delete"), (req, res) => {
   // create a middleware for that get receiver
   // that sends a REST API request to:
   // "localhost:3476/v1/permissions/check" endpoint
