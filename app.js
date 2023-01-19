@@ -42,7 +42,7 @@ function checkPermissions(req, res, next) {
       res.status(500).send(err);
     });
 }
-app.use(checkPermissions());
+app.use(checkPermissions);
 
 // GET /teams?id/resources API route to list resources of specific team
 
