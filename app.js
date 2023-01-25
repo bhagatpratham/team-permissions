@@ -1,9 +1,10 @@
 const express = require("express");
 const app = express();
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 require("dotenv").config();
 const { auth, requiresAuth } = require("express-openid-connect");
-const auth0 = require("auth0");
 
+//initialize the express-openid-connect
 app.use(
   auth({
     authRequired: false,
@@ -16,13 +17,6 @@ app.use(
   })
 );
 
-const auth0Client = new auth0.AuthenticationClient({
-  domain: "dev-lblgf0vk0.eu.auth0.com",
-  clientId: "Octa0nqPuc08JFFEZd090jF8GeoU9Eh3",
-  clientSecret:
-    "Mx_B-6mU8WjqcaJiJSoWLuLjY--2NEjRHI4vOWtHWxdQdVQPIhzgmgX3QUesj-ax",
-});
-
 // req.isAuthenticated is provided from the auth router
 app.get("/", (req, res) => {
   res.send(req.oidc.isAuthenticated() ? "Logged in" : "Logged out");
@@ -33,166 +27,82 @@ app.get("/profile", requiresAuth(), (req, res) => {
   res.send(JSON.stringify(req.oidc.user));
 });
 
-const checkPermissions = (id, permission_type) => {
-  return (req, res, next) => {
-    const body = { id, permission_type };
+// checkPermission middleware that lets you check 
+// whether user authorized to perform specific action 
+const checkPermissions = (permissionType) => {
+  return async (req, res, next) => {
 
-    fetch("http://localhost:3476/v1/permissions/check", {
+    // get authenticated user information from auth0
+    const userInfo = await req.oidc.user;
+    req.userInfo = userInfo
+    console.log('userInfo', userInfo)
+    
+    // body params of Permify check request
+    const bodyParams = {
+      metadata: {
+        schema_version: "",
+        snap_token: "",
+        depth: 20,
+      },
+      entity: {
+        type: "document",
+        id: req.params.id,
+      },
+      permission: permissionType,
+      subject: {
+        type: "user",
+        id: userInfo.sid, // user id on auth0
+        relation: "",
+      },
+    };
+
+    // performing the check request
+    const checkRes = await fetch("http://localhost:3476/v1/permissions/check", {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify(bodyParams),
       headers: { "Content-Type": "application/json" },
     })
-      .then((response) => {
-        response.json();
-        console.log(response);
-      })
-      .then((data) => {
-        req.permissions = data;
-        if (data.authorized == true) {
-          res.send("Access granted");
-        } else {
-          res.status(401).send("Access denied");
-        }
+    .catch((err) => {
+      res.status(500).send(err);
+    });
+    
+    let checkResJson = await checkRes.json()
+    console.log('Check Result:', checkResJson)
+
+    if (checkResJson.can == "RESULT_ALLOWED") {
+        // if user authorized
+        req.authorized = "authorized";
         next();
-      })
-      .catch((err) => {
-        res.status(500).send(err);
-      });
+    } 
+
+    // if user not authorized
+    req.authorized = "not authorized";
+    next();
   };
 };
-app.use(checkPermissions);
 
-// GET /teams?id/resources API route to list resources of specific team
+// view the document
+app.get("/docs/:id", checkPermissions("view"), requiresAuth(), (req, res) => {
 
-app.get("/teams/:id/resources", checkPermissions(14, "list"), (req, res) => {
-  // create a middleware for that get receiver
-  // that sends a REST API request to:
-  // "localhost:3476/v1/permissions/check" endpoint
-  // with body params:
-  const id = auth0Client.getProfile(req.query.access_token, (err, user) => {
-    if (err) return res.send(err);
-    console.log(user.user_id);
-    res.send(JSON.stringify(user.user_id));
-  });
-  console.log(id);
-  res.send(`
-   {
-   "metadata": {
-     "schema_version": "",
-     "snap_token": "",
-     "depth": 20
-   },
-   "entity": {
-     "type": "team",
-     "id": "1"
-   },
-   "permission": "list_resources",
-   "subject": {
-     "type": "user",
-     "id": ${id},
-     "relation": ""
-   },
- }`);
+  /// Result
+  res.send(`User:${req.userInfo.sid} is ${req.authorized} to view document:${req.params.id}`);
+
 });
 
-// GET /teams?id/resources?id API route to view resource
+// edit the resource
+app.put("/docs/:id", checkPermissions("edit"), requiresAuth(), (req, res) => {
+ 
+  // Result
+  res.send(`User:${req.userInfo.sid} to edit document:${req.params.id}`);
 
-app.get("/resources/:id", checkPermissions(14, "view"), (req, res) => {
-  // create a middleware for that get receiver
-  // that sends a REST API request to:
-  // "localhost:3476/v1/permissions/check" endpoint
-  // with body params:
-  const id = auth0Client.getProfile(req.query.access_token, (err, user) => {
-    if (err) return res.send(err);
-    console.log(user.user_id);
-    res.send(JSON.stringify(user.user_id));
-  });
-  console.log(id);
-  res.send(`
-   {
-   "metadata": {
-     "schema_version": "",
-     "snap_token": "",
-     "depth": 20
-   },
-   "entity": {
-     "type": "team",
-     "id": "1"
-   },
-   "permission": "view",
-   "subject": {
-     "type": "user",
-     "id": ${id},
-     "relation": ""
-   },
-   
- }`);
 });
 
-// PUT /resources?id API route to edit resource
-app.put("/resources/:id", checkPermissions(14, "edit"), (req, res) => {
-  // create a middleware for that get receiver
-  // that sends a REST API request to:
-  // "localhost:3476/v1/permissions/check" endpoint
-  // with body params:
-  const id = auth0Client.getProfile(req.query.access_token, (err, user) => {
-    if (err) return res.send(err);
-    console.log(user.user_id);
-    res.send(JSON.stringify(user.user_id));
-  });
-  console.log(id);
-  res.send(`
-  {
-  "metadata": {
-    "schema_version": "",
-    "snap_token": "",
-    "depth": 20
-  },
-  "entity": {
-    "type": "team",
-    "id": "1"
-  },
-  "permission": "edit",
-  "subject": {
-    "type": "user",
-    "id": ${id},
-    "relation": ""
-  },
-}
-`);
-});
+// delete the resource
+app.delete("/docs/:id", checkPermissions("delete"), requiresAuth(), (req, res) => {
 
-// DELETE /resources?id API route to delete the resource
+  // Result
+  res.send(`User:${req.userInfo.sid} to delete document:${req.params.id}`);
 
-app.delete("/resources/:id", checkPermissions(14, "delete"), (req, res) => {
-  // create a middleware for that get receiver
-  // that sends a REST API request to:
-  // "localhost:3476/v1/permissions/check" endpoint
-  // with body params:
-  const id = auth0Client.getProfile(req.query.access_token, (err, user) => {
-    if (err) return res.send(err);
-    console.log(user.user_id);
-    res.send(JSON.stringify(user.user_id));
-  });
-  console.log(id);
-  res.send(`
-    {
-    "metadata": {
-      "schema_version": "",
-      "snap_token": "",
-      "depth": 20
-    },
-    "entity": {
-      "type": "team",
-      "id": "1"
-    },
-    "permission": "delete",
-    "subject": {
-      "type": "user",
-      "id": ${id},
-      "relation": ""
-    },
-  }`);
 });
 
 const port = process.env.PORT || 3000;
