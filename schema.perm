@@ -1,39 +1,33 @@
 entity user {}
- 
+
 entity organization {
- 
+
    // organizational user types
    relation admin @user
-   relation member @user
- 
 }
- 
+
 entity team {
- 
-   // represents owner or creator of the team
-   relation manager @user
- 
+
    // represents direct member of the team
    relation member @user @organization#member
- 
+
    // reference for organization that team belong
    relation org @organization
- 
-   action grant_role = org.admin
-   action remove_role = org.admin
- 
 }
- 
-entity resource {
- 
-   // reference for a team that team resource belongs
+
+entity document {
+
+   // refers owner of the document
+   relation owner @user
+
+   // reference for team that team resource belongs
    relation team @team
- 
-   // reference for the organization that the resource belongs
+
+   // reference for organization that resource belongs
    relation org @organization
- 
+
    // permissions
-   action view = team.member or team.manager or org.admin
-   action edit = team.manager or org.admin
+   action view = team.member or team.manager or org.admin or owner
+   action edit = team.manager or org.admin or owner
    action delete = team.manager or org.admin
 }
